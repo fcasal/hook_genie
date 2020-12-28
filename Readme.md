@@ -2,9 +2,6 @@
 
 Generate basic hooks for library functions.
 
-### Install
-`pip3 instal -e . --user`
-
 ### Usage
 Generate a hook for `statfs`:
 ```bash
@@ -23,3 +20,6 @@ Makefile  statfs_hook.c  statfs_hook.so
 
 The hooking function is written to `hooks/statfs_hook.c` which can be modified as desired.
 
+
+### Install
+`pip3 instal -e . --user`
