@@ -4,3 +4,5 @@ hooks/*
 # python
 *.egg-info/
 __pycache__/
+
+tests/
