@@ -1,2 +1,6 @@
 hooks/*
 *.so
+
+# python
+*.egg-info/
+__pycache__/

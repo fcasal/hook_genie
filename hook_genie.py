@@ -123,11 +123,13 @@ def gen_hook_code(function_name):
 def gen_makefile(function_name):
     return f"all:\n\tgcc -fPIC -shared -rdynamic {function_name}_hook.c -o {function_name}_hook.so -ldl\n"
 
+import pkg_resources
 
 def gen_hook(function_name, dir_name="./hooks/"):
     code = gen_hook_code(function_name)
 
-    with open("base_hook.c", "r") as f:
+    base_file = pkg_resources.resource_filename(__name__, 'template/base_hook.c')
+    with open(base_file, "r") as f:
         base = f.read()
 
     if not os.path.exists(dir_name):
@@ -149,7 +151,6 @@ def main():
         action="store_true",
         help="print the generated hook (does not write files)",
     )
-
     args = parser.parse_args()
 
     if args.code_only:
