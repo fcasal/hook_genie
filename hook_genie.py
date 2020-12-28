@@ -1,12 +1,13 @@
 import os
-import subprocess
 import re
+import subprocess
 
 
-def parse_manpage(function_name):
+def fetch_type_from_manpage(function_name):
     for man_section in (2, 3):
         args = []
-        ret_type = ""
+        decl = ""
+        ret_type = "void"
         try:
             with open(os.devnull, "w") as devnull:
                 man_argv = ["man"]
@@ -48,69 +49,82 @@ def parse_manpage(function_name):
 
 
 def get_type_format(typ):
-    if 'char *' in typ:
+    if "char *" in typ:
         return '\\"%s\\"'
-    elif 'char' in typ:
-        return '\'%c\''
-    elif '*' in typ:
-        return '%p'
-    elif 'int' in typ:
-        return '%d'
-    elif 'size_t' in typ:
-        return '%ldu'
+    elif "char" in typ:
+        return "'%c'"
+    elif "*" in typ:
+        return "%p"
+    elif "int" in typ:
+        return "%d"
+    elif "size_t" in typ:
+        return "%ldu"
+    else:
+        return "%p"
 
-def template_hooker(function_name):
-    decl, ret_type, function_name, args = parse_manpage(function_name)
+
+def gen_hook_code(function_name):
+    decl, ret_type, function_name, args = fetch_type_from_manpage(function_name)
     arg_list = [f'{arg["type"]} {arg["name"]}' for arg in args]
     arg_list_no_type = [f'{arg["name"]}' for arg in args]
-    type_list = ', '.join([f'{get_type_format(arg["type"])}' for arg in args])
+    type_list = ", ".join([f'{get_type_format(arg["type"])}' for arg in args])
     new_fcn_ptr = f"{ret_type} (*orig_function)({', '.join(arg_list)})"
 
-    template = f"""
-    {new_fcn_ptr};
+    result = ""
+    if ret_type and ret_type != "void":
+        result = f"{ret_type} result = "
 
-    {ret_type} {function_name}({', '.join(arg_list)})
-    {{
-        // PREPARE
-        fprintf(stderr, "hooking %s({type_list})\\n", __func__, {', '.join(arg_list_no_type)});
-        if (!orig_function) {{
-            orig_function = dlsym(RTLD_NEXT, __func__);
-        }}
-        if (!orig_function) {{
-            printf("failed to dlsym");
-            exit(-1);
-        }}
+    code = f"""
+{new_fcn_ptr};
 
-
-        // BEFORE CALL
-        print_caller();
-
-
-        // CALL ORIGINAL
-        {ret_type} result = orig_function({', '.join(arg_list_no_type)});
-
-
-        // AFTER CALL
-
-        return result;
+{ret_type} {function_name}({', '.join(arg_list)})
+{{
+    // PREPARE
+    fprintf(stderr, "hooking %s({type_list})\\n", {', '.join(['__func__'] + arg_list_no_type)});
+    if (!orig_function) {{
+        orig_function = dlsym(RTLD_NEXT, __func__);
+    }}
+    if (!orig_function) {{
+        printf("failed to dlsym");
+        exit(-1);
     }}
 
-    """
 
-    return template
+    // BEFORE CALL
+    // print_caller();
+
+
+    // CALL ORIGINAL
+    {result}orig_function({', '.join(arg_list_no_type)});
+
+
+    // AFTER CALL
+
+    return {'result' if result else ''};
+}}
+
+"""
+
+    return code
+
 
 def gen_makefile(function_name):
-    return f'all:\n\tgcc -fPIC -shared -rdynamic {function_name}_hook.c -o {function_name}_hook.so -ldl\n'
+    return f"all:\n\tgcc -fPIC -shared -rdynamic {function_name}_hook.c -o {function_name}_hook.so -ldl\n"
 
-def gen_hook(function_name):
-    template = template_hooker(function_name)
-    with open('base_hook.c', 'r') as f:
+
+def gen_hook(function_name, dir_name="./hooks/"):
+    code = gen_hook_code(function_name)
+
+    with open("base_hook.c", "r") as f:
         base = f.read()
 
-    with open('hooks/' + function_name + '_hook.c', 'w') as f:
-        f.write(base + template)
+    if not os.path.exists(dir_name):
+        os.mkdir(dir_name)
 
-    with open('hooks/Makefile', 'w') as f:
+    with open(dir_name + function_name + "_hook.c", "w") as f:
+        f.write(base + code)
+
+    with open(dir_name + "Makefile", "w") as f:
         f.write(gen_makefile(function_name))
 
 
