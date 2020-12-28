@@ -1,5 +1,6 @@
 import os
 import re
+import argparse
 import subprocess
 
 
@@ -8,6 +9,7 @@ def fetch_type_from_manpage(function_name):
         args = []
         decl = ""
         ret_type = "void"
+        includes = ""
         try:
             with open(os.devnull, "w") as devnull:
                 man_argv = ["man"]
@@ -23,6 +25,13 @@ def fetch_type_from_manpage(function_name):
                 re.MULTILINE,
             )
             if match:
+                includes = "\n".join(
+                    [
+                        line.strip()
+                        for line in match.group(0).split("\n")
+                        if "#include" in line
+                    ]
+                )
                 decl = match.group(1)
                 ret_type = decl.split(function_name)[0].strip()
 
@@ -45,7 +54,7 @@ def fetch_type_from_manpage(function_name):
         except Exception as e:
             pass
 
-    return decl.strip(), ret_type, function_name, args
+    return includes, decl.strip(), ret_type, function_name, args
 
 
 def get_type_format(typ):
@@ -64,7 +73,7 @@ def get_type_format(typ):
 
 
 def gen_hook_code(function_name):
-    decl, ret_type, function_name, args = fetch_type_from_manpage(function_name)
+    includes, decl, ret_type, function_name, args = fetch_type_from_manpage(function_name)
     arg_list = [f'{arg["type"]} {arg["name"]}' for arg in args]
     arg_list_no_type = [f'{arg["name"]}' for arg in args]
     type_list = ", ".join([f'{get_type_format(arg["type"])}' for arg in args])
@@ -75,12 +84,15 @@ def gen_hook_code(function_name):
         result = f"{ret_type} result = "
 
     code = f"""
+
+{includes}
+
 {new_fcn_ptr};
 
 {ret_type} {function_name}({', '.join(arg_list)})
 {{
     // PREPARE
-    fprintf(stderr, "hooking %s({type_list})\\n", {', '.join(['__func__'] + arg_list_no_type)});
+    fprintf(stderr, "\t[hook_genie] %s({type_list})\\n", {', '.join(['__func__'] + arg_list_no_type)});
     if (!orig_function) {{
         orig_function = dlsym(RTLD_NEXT, __func__);
     }}
@@ -128,3 +140,23 @@ def gen_hook(function_name, dir_name="./hooks/"):
         f.write(gen_makefile(function_name))
 
 
+def main():
+    parser = argparse.ArgumentParser(description="Hook genie")
+    parser.add_argument("function_name", help="Generate a hook for this function")
+    parser.add_argument(
+        "-c",
+        "--code_only",
+        action="store_true",
+        help="print the generated hook (does not write files)",
+    )
+
+    args = parser.parse_args()
+
+    if args.code_only:
+        print(gen_hook_code(args.function_name))
+    else:
+        gen_hook(args.function_name)
+
+
+if __name__ == "__main__":
+    main()
